@@ -35,13 +35,17 @@ public class Client {
 
                     //split the line by spaces
                     String[] lineArray = line.split(" ", 3);
+
+                    //if current line is empty then skip line or the content does not meet specifications
+                    if(line.isEmpty() || lineArray.length < 2 ){
+                        continue;
+                    }
                     
                     //assign each element to its respective variables
                     String action = lineArray[0];
                     String key = lineArray[1];
                     String value = "";
                     String formattedString = "";
-                    
                     
                     //add value if there is a value
                     if(lineArray.length > 2){
@@ -57,6 +61,7 @@ public class Client {
                     }
                     
                     //creating the formatted string
+                    //adds message size
                     if(messageLength < 10){
                         formattedString += "00" + messageLength;
                     }
@@ -64,31 +69,38 @@ public class Client {
                         formattedString += "0" + messageLength;
                     }
 
+                    //add action
                     if(action.equals("READ")){
-                        formattedString += " R ";
+                        formattedString += " " + "R";
                     }
                     else if(action.equals("GET")){
-                        formattedString += " G ";
+                        formattedString += " " + "G";
                     }
                     else if(action.equals("PUT")){
-                        formattedString += " P ";
+                        formattedString += " " +  "P";
                     }
                     else{
                         System.out.println("Error: Invalid action. Line: " + line);
                         continue;
                     }
 
-                    formattedString += key + " " + value;
+                    formattedString += " " + key + " " + value;   
 
                     //writes to server
                     writer.println(formattedString);
 
                     //reasponse from server
                     String response = reader.readLine();
-                    String[] reponseArray = response.split(" ", 2);
-                    String serverResponseLine = reponseArray[1];
+                    String[] responseArray = response.split(" ", 2);
+                    String serverResponseLine = responseArray[1];
+                    String outputString = "";
 
-                    String outputString = action + " " + key + " " + value + ": " + serverResponseLine;
+                    if(value.equals("")){
+                        outputString = action + " " + key + ": " + serverResponseLine;
+                    }
+                    else{
+                        outputString = action + " " + key + " " + value + ": " + serverResponseLine;
+                    }
 
                     System.out.println(outputString);
                 }
@@ -99,8 +111,5 @@ public class Client {
         catch (IOException e) {
             System.out.println("Client error: " + e.getMessage());
         }
-
-
     }
-
 }

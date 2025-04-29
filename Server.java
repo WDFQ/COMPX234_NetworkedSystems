@@ -1,15 +1,14 @@
 import java.io.*;
 import java.net.*;
-import java.text.ParseException;
 
 public class Server {
 
-        //initiates tuple space
-        public static TupleSpace tupleSpace = new TupleSpace();
+    //initiates tuple space
+    public static TupleSpace tupleSpace = new TupleSpace();
+    public static int totalClientConnections = 0;
 
-
-        public static void main(String[] args) {
-        
+    public static void main(String[] args) {
+    
 
         // Ensure the correct number of arguments are provided
         if (args.length != 1) {
@@ -30,23 +29,87 @@ public class Server {
                 //try to activate the server socket
                 try (ServerSocket serverSocket = new ServerSocket(port)) {
                     System.out.println("Server is listening on port " + port);
-                    while (true) {
-                        //connects with client
-                        try (Socket clientSocket = serverSocket.accept()) {
-                            System.out.println("Connection established with " + clientSocket.getInetAddress());
-        
-                            // Get the input stream from the client socket
-                            InputStream input = clientSocket.getInputStream();
-                            // Wrap the input stream in a BufferedReader to read text data
-                            BufferedReader reader = new BufferedReader(new InputStreamReader(input));
-                            // Get the output stream to send data back to the client
-                            OutputStream output = clientSocket.getOutputStream();
-                            // Wrap the output stream in a PrintWriter for convenient text output
-                            PrintWriter writer = new PrintWriter(output, true);
 
-                            // Read the request line from the client
-                            String requestLine = reader.readLine();
-                            writer.println(processLine(requestLine));
+                    //thread for displaying information
+                    Thread newTimerThread = new Thread(() -> {
+                        try {
+                            //run until interrupted
+                            while(!Thread.currentThread().isInterrupted()){
+                                //display the information every 10 seconds
+                                display();
+                                Thread.sleep(10000);
+                            }
+                        } 
+                        catch (Exception e) {
+                            System.out.println("Timer Thread Error: " + e.getMessage());
+                        }
+                    }
+                    );
+                    
+                    //daemon thread does not block the program from exiting
+                    newTimerThread.setDaemon(true);
+                    //start the thread
+                    newTimerThread.start();
+                    while (true) {
+                        try {
+                            //connects with client
+                            Socket clientSocket = serverSocket.accept();
+                            totalClientConnections++;
+
+                            //creates new thread to run the operations
+                            Thread newClientThread = new Thread(() -> {
+                                //creates new socket for this thread
+                                Socket newthreadSocket = clientSocket;
+                                try {
+                                    System.out.println("Connection established with " + clientSocket.getInetAddress());
+        
+                                    // Get the input stream from the client socket
+                                    InputStream input = newthreadSocket.getInputStream();
+                                    // Wrap the input stream in a BufferedReader to read text data
+                                    BufferedReader reader = new BufferedReader(new InputStreamReader(input));
+                                    // Get the output stream to send data back to the client
+                                    OutputStream output = newthreadSocket.getOutputStream();
+                                    // Wrap the output stream in a PrintWriter for convenient text output
+                                    PrintWriter writer = new PrintWriter(output, true);
+                                    //run continously until no more lines to put to server
+                                    while(true){
+                                        // Read the request line from the client
+                                        String requestLine = reader.readLine();
+                                        //stop resbonding if no more lines is coming from client
+                                        if(requestLine == null){
+                                            System.out.println("Client disconnected");
+                                            break;
+                                        }
+
+                                        //process the line
+                                        String processedLine = processLine(requestLine);
+                                        //if processing fails, skip current and accept next line from client
+                                        if(processedLine.isEmpty()){
+                                            continue;
+                                        }
+                                        
+                                        //return info to client
+                                        writer.println(processedLine);
+                                    }
+                                } 
+                                catch (Exception e) {
+                                    System.out.println("Client input error: " + e.getMessage());
+                                }
+                                finally{
+
+                                    try {
+                                        newthreadSocket.close();
+                                    } 
+                                    catch (Exception e) {
+                                        System.out.println("Error closing client thread: " + e.getMessage());
+                                    }
+                                }
+                            }
+                            );
+
+                            //start the thread
+                            newClientThread.start();
+                            
                         } 
                         catch (IOException e) {
                             System.out.println("Error handling client: " + e.getMessage());
@@ -55,7 +118,6 @@ public class Server {
                 } catch (IOException e) {
                     System.out.println("Server error: " + e.getMessage());
                 }
-                
             }
         } 
         catch (Exception e) {
@@ -75,47 +137,46 @@ public class Server {
 
             //decodes the information sent from client
             String messageLength = lineArray[0];
-            String action = lineArray[1]; //action (R, P, G)
-            String key = lineArray[2]; //key (k)
-            String value = ""; //value (v)
+            String action = lineArray[1]; 
+            String key = lineArray[2]; 
+            String value = ""; 
             String outputMessage = "";
 
             if(lineArray.length > 3){
                 value = lineArray[3];
             }
 
-
+            String response = "";
             //process info
             if(action.equals("R")){
                 //get the return from tuplespace
                 value = tupleSpace.read(key);
                 //if return value is 1, format the output
-                if(value == ""){
+                if(value.equals("")){
                     String errorMessage = "does not exist";
                     //format the error message
-                    String formattedErrorMessage = messageLength + " " + errorMessage.length() + " ERR " + key + " " + errorMessage;
-                    return formattedErrorMessage;
+                    response = messageLength + " " + "ERR" + " " + key + " " + errorMessage;
+                    return response;
                 }
                 else{
                     outputMessage = "read";
-                    return messageLength + " " + " OK " + "(" + key + ", " + value + ") " + outputMessage;
+                    return messageLength + " " + "OK" + " " + "(" + key + ", " + value + ")" + " " + outputMessage;
                 }
             }
             //if action is put
             else if(action.equals("P")){
                 //get the return from tuplespace
-                int returnValue = tupleSpace.put(key, lineArray[2]);
+                int returnValue = tupleSpace.put(key, value);
                 //if return value is 1, format the output
-                if(returnValue == 1){
+                if(returnValue == 0){
                     outputMessage = "added";
-                    tupleSpace.put(key, value);
-                    return messageLength + " " + " OK " + "(" + key + ", " + value + ") " + outputMessage;
+                    return messageLength + " " + "OK" + " " + "(" + key + ", " + value + ")" + " " + outputMessage;
                 }
                 else{
                     String errorMessage = "already exists";
                     //format the error message
-                    String formattedErrorMessage = messageLength + " " + " ERR " + key + " " + errorMessage;
-                    return formattedErrorMessage;
+                    response = messageLength + " " + "ERR" + " " + key + " " + errorMessage;
+                    return response;
                 }
             }
             //if the action is get
@@ -123,15 +184,15 @@ public class Server {
                 //get the return from tuplespace
                 value = tupleSpace.get(key);
                 //if return value is 1, format the output
-                if(value == ""){
+                if(value.equals("")){
                     String errorMessage = "does not exist";
                     //format the error message
-                    String formattedErrorMessage = messageLength + " " + " ERR " + key + " " + errorMessage;
-                    return formattedErrorMessage;
+                    response = messageLength + " " + "ERR" + " " + key + " " + errorMessage;
+                    return response;
                 }
                 else{
                     outputMessage = "removed";
-                    return messageLength + " " + " OK " + "(" + key + ", " + value + ") " + outputMessage;
+                    return messageLength + " " + "OK" + " " + "(" + key + ", " + value + ")" + " " + outputMessage;
                 }
             }
             else{
@@ -144,5 +205,25 @@ public class Server {
            return "";
         }
        
+    }
+
+    /**
+     * display system information
+     */
+    private static void display(){
+        System.out.println("--- Tuple Space Stats ---");
+        System.out.println("Tuples: " + tupleSpace.getNoOfTuples());
+
+        System.out.println("Avg Tuple Size: " + tupleSpace.getAvgTupleSize());
+        System.out.println("Avg Key Size: " + tupleSpace.getAvgKeySize());
+        System.out.println("Avg Value Size: " + tupleSpace.getAvgValueSize());
+
+        System.out.println("Clients: " + totalClientConnections);
+        System.out.println("Operations: " + tupleSpace.getTotalOperations());
+
+        System.out.println("Reads: " + tupleSpace.getTotalReads());
+        System.out.println("Gets: " + tupleSpace.getTotalGets());
+        System.out.println("Puts: " + tupleSpace.getTotalPuts());
+        System.out.println("Errors: " + tupleSpace.getTotalErrors());
     }
 }
